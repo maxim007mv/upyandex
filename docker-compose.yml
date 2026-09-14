@@ -1,0 +1,152 @@
+services:
+  # -------------------------------------------------------------
+  # PostgreSQL Database
+  # -------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: mailing_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: mailing_db
+    ports:
+      - "${DB_PORT:-5439}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mailing_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # Redis Cache & Message Broker
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: mailing_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6389}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # -------------------------------------------------------------
+  # Mailpit: Local SMTP Gateway & Web Mailbox Viewer
+  # -------------------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailing_mailpit
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1028}:1025"
+      - "${MAILPIT_WEB_PORT:-8028}:8025"
+
+  # -------------------------------------------------------------
+  # FastAPI Core API Service
+  # -------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: mailing_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/mailing_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_TLS: "false"
+      SMTP_SSL: "false"
+      EMAILS_FROM_EMAIL: "noreply@mailing-platform.local"
+      EMAILS_FROM_NAME: "Mailing Service"
+      SECRET_KEY: "supersecretproductionjwtkeyformailingmanagement123456"
+      UNSUBSCRIBE_BASE_URL: "http://localhost:3008/unsubscribe"
+    ports:
+      - "${BACKEND_PORT:-8088}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.db.init_db &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # -------------------------------------------------------------
+  # Celery Async Dispatch & Sender Worker
+  # -------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: mailing_worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/mailing_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      EMAILS_FROM_EMAIL: "noreply@mailing-platform.local"
+      UNSUBSCRIBE_BASE_URL: "http://localhost:3008/unsubscribe"
+      SECRET_KEY: "supersecretproductionjwtkeyformailingmanagement123456"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    command: celery -A app.workers.celery_app.celery_app worker --loglevel=info --concurrency=4
+
+  # -------------------------------------------------------------
+  # Celery Beat Periodic Scheduler
+  # -------------------------------------------------------------
+  beat:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: mailing_beat
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/mailing_db
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SECRET_KEY: "supersecretproductionjwtkeyformailingmanagement123456"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app.celery_app beat --loglevel=info
+
+  # -------------------------------------------------------------
+  # Frontend Web UI (React + Vite + Nginx)
+  # -------------------------------------------------------------
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: mailing_frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3008}:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
