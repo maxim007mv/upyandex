@@ -54,6 +54,7 @@ class ConsoleUI:
         else:
             self._print(f"Отправка сейчас не выполняется (статус: {mailing.status}).")
 
+        self._print_mailings()
         self._print("\nРабота программы завершена.")
         return 0
 
@@ -62,7 +63,7 @@ class ConsoleUI:
     def _print_header(self) -> None:
         self._print(LINE)
         self._print("Система управления информационными рассылками")
-        self._print("ООП-версия (классы, наследование, полиморфизм)")
+        self._print("ООП-версия (классы, наследование, полиморфизм, JSON-хранилище)")
         self._print(LINE)
 
     def _login(self) -> User:
@@ -125,6 +126,15 @@ class ConsoleUI:
             f"{Tariff.format(self._mailing_service.calculate_cost(mailing))} руб."
         )
         self._print(f"Всего рассылок в системе: {len(self._mailing_service.repository)}")
+
+    def _print_mailings(self) -> None:
+        """Показать все сохранённые рассылки (обработка коллекции)."""
+        mailings = self._mailing_service.repository.sorted_by_title()
+        if not mailings:
+            return
+        self._print("\nРассылки в хранилище (по алфавиту):")
+        for number, mailing in enumerate(mailings, start=1):
+            self._print(f"  {number}. {mailing.title} — {mailing.status.value}")
 
     # ---------- служебные методы ----------
 

@@ -16,6 +16,7 @@ from .exceptions import (
     AuthenticationError,
     MailingError,
     StateError,
+    StorageError,
     ValidationError,
 )
 from .models import (
@@ -29,6 +30,7 @@ from .models import (
 )
 from .senders import ConsoleSender, Sender
 from .services import AuthService, MailingRepository, MailingService, Tariff
+from .storage import JsonStorage
 from .ui import ConsoleUI
 
 __version__ = "2.0.0"
@@ -41,6 +43,7 @@ __all__ = [
     "AuthService",
     "ConsoleSender",
     "ConsoleUI",
+    "JsonStorage",
     "Mailing",
     "MailingError",
     "MailingRepository",
@@ -51,6 +54,7 @@ __all__ = [
     "Sender",
     "StateError",
     "Status",
+    "StorageError",
     "Tariff",
     "User",
     "ValidationError",

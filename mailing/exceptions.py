@@ -20,3 +20,7 @@ class AuthenticationError(MailingError):
 
 class StateError(MailingError):
     """Операция невозможна в текущем состоянии объекта."""
+
+
+class StorageError(MailingError):
+    """Не удалось прочитать или сохранить файл данных."""

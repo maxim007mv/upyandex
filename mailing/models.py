@@ -120,6 +120,30 @@ class User(ABC):
     def __hash__(self) -> int:
         return hash(self._email)
 
+    def to_dict(self) -> dict:
+        """Представить пользователя данными, пригодными для JSON."""
+        return {
+            "role": self.role,
+            "email": self._email,
+            "password_hash": self._password_hash,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> User:
+        """Восстановить пользователя из данных JSON (обратно к ``to_dict``)."""
+        try:
+            user_class = _USER_CLASSES_BY_ROLE[data["role"]]
+            email = data["email"]
+            password_hash = data["password_hash"]
+        except KeyError as error:
+            raise ValidationError("некорректные данные пользователя") from error
+        # Объект создаётся в обход __init__: в JSON уже хранится готовый
+        # хеш пароля, и повторно хешировать его нельзя.
+        user = object.__new__(user_class)
+        user._email = email
+        user._password_hash = password_hash
+        return user
+
 
 class Admin(User):
     """Администратор — полный доступ к управлению рассылками."""
@@ -135,6 +159,13 @@ class Operator(User):
     @property
     def role(self) -> str:
         return "Оператор"
+
+
+#: Сопоставление роли и класса: нужно для восстановления наследников из JSON.
+_USER_CLASSES_BY_ROLE: dict[str, type[User]] = {
+    "Администратор": Admin,
+    "Оператор": Operator,
+}
 
 
 class Message:
@@ -188,6 +219,24 @@ class Message:
 
     def __hash__(self) -> int:
         return hash((self._recipient, self._subject))
+
+    def to_dict(self) -> dict:
+        """Представить сообщение данными, пригодными для JSON."""
+        return {
+            "recipient": self._recipient,
+            "subject": self._subject,
+            "status": self._status.name,
+            "sent_at": self._sent_at.isoformat() if self._sent_at else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Message:
+        """Восстановить сообщение из данных JSON (обратно к ``to_dict``)."""
+        message = cls(recipient=data["recipient"], subject=data["subject"])
+        message._status = MessageStatus[data["status"]]
+        sent_at = data.get("sent_at")
+        message._sent_at = datetime.fromisoformat(sent_at) if sent_at else None
+        return message
 
 
 class Mailing:
@@ -341,3 +390,32 @@ class Mailing:
             f"recipient_count={self._recipient_count}, "
             f"status={self._status.value!r})"
         )
+
+    def to_dict(self) -> dict:
+        """Представить рассылку данными, пригодными для JSON."""
+        return {
+            "title": self._title,
+            "author": self._author.to_dict(),
+            "recipient_count": self._recipient_count,
+            "status": self._status.name,
+            "created_at": self._created_at.isoformat(),
+            "sent_at": self._sent_at.isoformat() if self._sent_at else None,
+            "messages": [message.to_dict() for message in self._messages],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Mailing:
+        """Восстановить рассылку из данных JSON (обратно к ``to_dict``)."""
+        mailing = cls(
+            title=data["title"],
+            author=User.from_dict(data["author"]),
+            recipient_count=data["recipient_count"],
+        )
+        mailing._status = Status[data["status"]]
+        mailing._created_at = datetime.fromisoformat(data["created_at"])
+        sent_at = data.get("sent_at")
+        mailing._sent_at = datetime.fromisoformat(sent_at) if sent_at else None
+        mailing._messages = [
+            Message.from_dict(item) for item in data.get("messages", [])
+        ]
+        return mailing

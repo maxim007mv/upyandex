@@ -82,6 +82,39 @@ class MailingRepositoryTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.repository.add("не рассылка")
 
+    def test_search_by_title(self):
+        self.repository.add(self.mailing)
+        self.repository.add(Mailing("Акция", Admin("b@b.ru", "123"), 5))
+
+        self.assertEqual(self.repository.search("нов"), (self.mailing,))
+        self.assertEqual(len(self.repository.search("")), 2)
+        self.assertEqual(self.repository.search("такой нет"), ())
+
+    def test_sorted_by_title(self):
+        second = Mailing("Акция", Admin("b@b.ru", "123"), 5)
+        self.repository.add(self.mailing)
+        self.repository.add(second)
+
+        self.assertEqual(
+            [mailing.title for mailing in self.repository.sorted_by_title()],
+            ["Акция", "Новости"],
+        )
+
+    def test_sorted_by_date(self):
+        # self.mailing создана раньше (в setUp), second — позже.
+        second = Mailing("Акция", Admin("b@b.ru", "123"), 5)
+        self.repository.add(second)
+        self.repository.add(self.mailing)
+
+        self.assertEqual(
+            [mailing.title for mailing in self.repository.sorted_by_date()],
+            ["Новости", "Акция"],
+        )
+
+    def test_can_load_initial_mailings(self):
+        repository = MailingRepository([self.mailing])
+        self.assertEqual(repository.all(), (self.mailing,))
+
 
 class MailingServiceTests(unittest.TestCase):
     """Бизнес-логика: создание черновика, стоимость, статус, отправка."""
